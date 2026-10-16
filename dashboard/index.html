@@ -1,0 +1,1144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SAARTHI — SmartCabin Panel</title>
+<style>
+  /* ── Design tokens ──────────────────────────────────────────────── */
+  :root {
+    --bg:#0d1117; --panel:#161b22; --line:#30363d; --txt:#e6edf3; --muted:#8b949e;
+    /* Default (sighted) palette */
+    --green:#2ea043; --amber:#d29922; --red:#f85149; --blue:#1f6feb;
+    /* Banner level colours (sighted) */
+    --lvl0-bg:#1a2b1a; --lvl0-txt:#4caf50;
+    --lvl1-bg:#0d2137; --lvl1-txt:#29b6f6;
+    --lvl2-bg:#3a2600; --lvl2-txt:#ffb300;
+    --lvl3-bg:#3b0a0a; --lvl3-txt:#f85149;
+    /* Full-screen flash overlay colours (sighted) */
+    --buzz-lvl2: rgba(255,179,0, 0.18);
+    --buzz-lvl3: rgba(248,81,73, 0.30);
+    --buzz-lvl3-border: #f85149;
+  }
+
+  /* ── Colour-blind-safe overrides (active when <html data-cb="1">) ─ */
+  html[data-cb="1"] {
+    --green:#1565c0;   /* blue  = safe */
+    --amber:#e65100;   /* orange = caution */
+    --red:#e65100;     /* orange = danger (never red-vs-green) */
+    --lvl0-bg:#0d1f38; --lvl0-txt:#42a5f5;
+    --lvl1-bg:#1a2a00; --lvl1-txt:#aed581;
+    --lvl2-bg:#3a1f00; --lvl2-txt:#ffa726;
+    --lvl3-bg:#3a1f00; --lvl3-txt:#ffa726;
+    /* CB-safe flash colours: amber/orange, never red */
+    --buzz-lvl2: rgba(255,167,38, 0.22);
+    --buzz-lvl3: rgba(230,81,0,   0.35);
+    --buzz-lvl3-border: #ffa726;
+  }
+
+  /* ── Base & Viewport constraints (Just One Dashboard) ───────────── */
+  * { box-sizing:border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100vh;
+    overflow: hidden; /* Prevent body scrolling entirely */
+  }
+  body { 
+    font-family:'Segoe UI',system-ui,sans-serif;
+    background:var(--bg); 
+    color:var(--txt); 
+    display: flex;
+    flex-direction: column;
+  }
+  
+  header { 
+    display:flex; 
+    align-items:center; 
+    justify-content:space-between;
+    padding:12px 20px; 
+    background:var(--panel);
+    border-bottom:1px solid var(--line); 
+    flex-shrink: 0;
+  }
+  header h1 { font-size:18px; margin:0; letter-spacing:1px; }
+  header .status { font-size:12px; color:var(--muted); }
+  
+  /* The main container grid constrained to the viewport */
+  .grid-layout { 
+    display:grid; 
+    grid-template-columns:280px 1fr 320px;
+    gap:14px; 
+    padding:14px; 
+    flex-grow: 1;
+    overflow: hidden; /* Prevent main layout scrolling */
+    min-height: 0;
+  }
+  
+  /* Sidebar and Center Columns */
+  section.sidebar-left {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    height: 100%;
+    overflow-y: auto; /* Left sidebar scrolls internally if needed */
+    padding-right: 2px;
+  }
+
+  section.center-content {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    height: 100%;
+    overflow-y: auto; /* Center column scrolls internally if needed */
+    padding-right: 2px;
+  }
+
+  section.sidebar-right {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    height: 100%;
+    overflow: hidden; /* Right sidebar stays contained */
+  }
+
+  .card { background:var(--panel); border:1px solid var(--line);
+          border-radius:10px; padding:14px; position: relative; transition: border-color 0.25s, box-shadow 0.25s; }
+  .card:hover { border-color: #444c56; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+  .card h2 { font-size:12px; text-transform:uppercase; color:var(--muted);
+             margin:0 0 10px; letter-spacing:1px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px; }
+  .op-name { font-size:20px; font-weight:600; color: #fff; }
+  .op-role  { color:var(--muted); font-size:13px; margin-bottom:8px; }
+  .tag { display:inline-block; font-size:11px; padding:2px 8px; border-radius:10px;
+         background:#21262d; border:1px solid var(--line); margin:2px 2px 0 0; }
+
+  /* ── Alert banner ───────────────────────────────────────────────── */
+  .banner {
+    font-size:26px; font-weight:700; text-align:center; padding:18px;
+    border-radius:10px; transition:background .3s, color .3s;
+  }
+  .banner[data-level="0"] { background:var(--lvl0-bg); color:var(--lvl0-txt); }
+  .banner[data-level="1"] { background:var(--lvl1-bg); color:var(--lvl1-txt); }
+  .banner[data-level="2"] { background:var(--lvl2-bg); color:var(--lvl2-txt); }
+  .banner[data-level="3"] { background:var(--lvl3-bg); color:var(--lvl3-txt);
+                             animation:pulse-border 1.4s ease-in-out infinite; }
+  @keyframes pulse-border {
+    0%,100%{ box-shadow:0 0 0 0 rgba(248,81,73,.4); }
+    50%     { box-shadow:0 0 0 8px rgba(248,81,73,0); }
+  }
+  html[data-cb="1"] .banner[data-level="3"] {
+    animation:pulse-border-cb 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse-border-cb {
+    0%,100%{ box-shadow:0 0 0 0 rgba(255,167,38,.4); }
+    50%     { box-shadow:0 0 0 8px rgba(255,167,38,0); }
+  }
+
+  .gauge { height:14px; background:#21262d; border-radius:7px;
+           overflow:hidden; margin:6px 0 2px; }
+  .gauge > div { height:100%; width:0; transition:width .2s; }
+  .row { display:flex; justify-content:space-between;
+         font-size:13px; padding:4px 0; border-bottom: 1px solid rgba(255,255,255,0.02); }
+
+  /* ── Blind-spot zone pills ──────────────────────────────────────── */
+  .zone { display:flex; gap:6px; margin-top:6px; }
+  .zone span {
+    flex:1; text-align:center; padding:8px 0; border-radius:6px;
+    font-size:12px; background:#21262d; opacity:.35; font-weight:600;
+  }
+  .zone span.on { opacity:1; }
+  #zGREEN { color:var(--green); }
+  #zAMBER { color:var(--amber); }
+  #zRED   { color:var(--red);   }
+
+  .big { font-size:40px; font-weight:700; text-align:center; }
+  .reason { background:#0b1d33; border:1px solid var(--blue);
+            border-radius:8px; padding:10px; font-size:13px; min-height:60px; }
+  .reason .t { font-weight:700; margin-bottom:4px; }
+  .factor { font-size:12px; color:var(--muted); }
+  
+  ul.timeline { list-style:none; margin:0; padding:0;
+                overflow-y:auto; }
+  ul.timeline li { font-size:12px; padding:6px 8px;
+                   border-bottom:1px solid var(--line); }
+  ul.timeline li .lv { font-weight:700; }
+  .badge { font-size:13px; padding:6px 10px; border-radius:8px;
+           display:inline-block; font-weight:600; }
+  .muted { color:var(--muted); font-size:12px; }
+  .phase { font-size:11px; color:var(--muted); }
+  .flash { animation:flash .5s ease-in-out 3; }
+  @keyframes flash { 0%,100%{background:var(--panel);} 50%{background:#3a1d1d;} }
+
+  /* ── Camera preview: contain so overlaid text is never cropped ── */
+  #camWrap {
+    padding:0; overflow:hidden; grid-row:1/3; display:flex;
+    flex-direction:column;
+  }
+  #camPreview {
+    width:100%; display:block;
+    object-fit:contain;
+    background:#000;
+    border-radius:0 0 8px 8px;
+    max-height:360px;
+  }
+
+  /* ── Context-risk badge ─────────────────────────────────────────── */
+  #ctxBadge { display:flex; flex-direction:column; align-items:flex-start;
+              gap:2px; }
+  #ctxBadge .ctx-level { font-size:14px; font-weight:700; }
+  #ctxBadge .ctx-sub   { font-size:10px; font-weight:400; opacity:.8; }
+
+  /* ── Switch operator list highlighting ──────────────────────────── */
+  .op-btn.active { border-color:var(--blue) !important;
+                   background:#0d2137 !important; }
+
+  /* Haptic simulator alert bar */
+  .haptic-alert-bar {
+    background: #ff7b00;
+    color: #000;
+    font-weight: 800;
+    font-size: 13px;
+    text-transform: uppercase;
+    text-align: center;
+    padding: 8px;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    animation: haptic-pulse 0.4s infinite alternate;
+  }
+  @keyframes haptic-pulse {
+    0% { transform: scale(1); background: #ff7b00; }
+    100% { transform: scale(1.02); background: #ffea00; }
+  }
+
+  /* Trainee Shield Banner style */
+  .trainee-shield-bar {
+    background: rgba(210, 153, 34, 0.15);
+    border: 1px solid var(--amber);
+    color: var(--amber);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    text-align: center;
+  }
+
+  /* Status pulse */
+  @keyframes status-pulse {
+    0% { opacity: 0.3; }
+    100% { opacity: 1; }
+  }
+
+  /* ── BUZZ OVERLAY — full-screen visual alert for Level 2 and Level 3 ─ */
+  #buzzOverlay {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;   
+    z-index: 9999;
+    opacity: 0;
+    transition: opacity 0.15s;
+    border: 0px solid transparent;
+  }
+  #buzzOverlay[data-buzz="2"] {
+    opacity: 1;
+    background: var(--buzz-lvl2);
+    animation: buzz-amber 1.8s ease-in-out infinite;
+  }
+  @keyframes buzz-amber {
+    0%,100%{ box-shadow:inset 0 0 0 0 rgba(255,179,0,0);   border-width:0; }
+    50%     { box-shadow:inset 0 0 60px 10px rgba(255,179,0,.25); border:6px solid #ffb300; }
+  }
+  #buzzOverlay[data-buzz="3"] {
+    opacity: 1;
+    background: var(--buzz-lvl3);
+    border: 6px solid var(--buzz-lvl3-border);
+    animation: buzz-red 0.9s ease-in-out infinite;
+  }
+  @keyframes buzz-red {
+    0%,100%{ opacity:0.9; border-width:6px; }
+    50%     { opacity:0.3; border-width:14px; }
+  }
+  #buzzOverlay[data-buzz="0"],
+  #buzzOverlay[data-buzz="1"],
+  #buzzOverlay:not([data-buzz]) {
+    opacity: 0;
+    animation: none;
+    border-width: 0;
+  }
+
+  #soundUnlock {
+    position: fixed;
+    bottom: 18px; left: 50%; transform: translateX(-50%);
+    z-index: 10000;
+    background: #1f6feb; color: #fff;
+    padding: 10px 22px; border-radius: 24px;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+    border: none; box-shadow: 0 4px 16px rgba(0,0,0,.4);
+    display: none;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+  /* Operator directory search focus */
+  #opSearchInput:focus {
+    border-color: var(--blue) !important;
+    box-shadow: 0 0 0 2px rgba(31, 111, 235, 0.2);
+  }
+</style>
+</head>
+<body>
+
+<!-- ══════════════ BUZZ OVERLAY — sits over the whole page ══════════════ -->
+<div id="buzzOverlay" data-buzz="0" aria-live="assertive" aria-atomic="true"></div>
+
+<!-- ══════════════ SOUND UNLOCK BUTTON ══════════════ -->
+<button id="soundUnlock">🔔 Tap to enable alert sound & speech</button>
+
+<header>
+  <h1>🛠 SAARTHI · SmartCabin AI Copilot</h1>
+  <div class="status">
+    <span id="conn">● connecting…</span> &nbsp;|&nbsp;
+    <span class="phase" id="phase"></span> &nbsp;|&nbsp;
+    <span id="backend"></span>
+  </div>
+</header>
+
+<div class="grid-layout">
+  <!-- Left Column: Operator details & Adaptations -->
+  <section class="sidebar-left">
+    <!-- Mini Operator Profile Card -->
+    <div class="card" style="display:flex; flex-direction:column; gap:12px;">
+      <h2>Operator Cabin Profile</h2>
+      <div style="display: flex; flex-direction: column; align-items: center; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 10px;">
+        <div id="avatarContainer" style="margin-bottom: 6px;"></div>
+        <div class="op-name" id="opName" style="font-size:18px;">—</div>
+        <div class="op-role" id="opRole" style="font-size:12px; margin-bottom:4px;">—</div>
+        <span id="opId" style="font-family: monospace; font-size: 10px; color: var(--muted); background: #21262d; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--line);">ID: —</span>
+      </div>
+
+      <!-- Compact metadata -->
+      <div style="font-size: 12px; display: flex; flex-direction: column; gap: 4px;">
+        <div class="row" style="border: none; padding: 2px 0;">
+          <span>Experience level</span>
+          <strong id="opExpBadge">—</strong>
+        </div>
+        <div class="row" style="border: none; padding: 2px 0;">
+          <span>Accessibility profile</span>
+          <strong id="opAccessBadge">—</strong>
+        </div>
+        <div class="row" style="border: none; padding: 2px 0;">
+          <span>Preferred language</span>
+          <strong id="opLangBadge">—</strong>
+        </div>
+        <div class="row" style="border: none; padding: 2px 0;">
+          <span>Shift status</span>
+          <strong style="color: var(--green); display: flex; align-items: center; gap: 4px;">
+            <span style="width:6px; height:6px; border-radius:50%; background:var(--green); display:inline-block; animation: status-pulse 1s infinite alternate;"></span> Active
+          </strong>
+        </div>
+      </div>
+    </div>
+    
+    <!-- AI Cabin Adaptations checklist -->
+    <div class="card">
+      <h2>AI Cabin Adaptations</h2>
+      <div style="display: flex; flex-direction: column; gap: 5px; margin-top: 4px; font-size: 11px;">
+        <div id="adaptVisual" style="padding: 5px 8px; background: #21262d; border: 1px solid var(--line); border-radius: 6px; display: flex; align-items: center; gap: 8px; transition: background-color 0.2s, border-color 0.2s;">
+          <span>🎨</span> <span id="adaptVisualText">Visual Display</span>
+        </div>
+        <div id="adaptAudio" style="padding: 5px 8px; background: #21262d; border: 1px solid var(--line); border-radius: 6px; display: flex; align-items: center; gap: 8px; transition: background-color 0.2s, border-color 0.2s;">
+          <span>🔊</span> <span id="adaptAudioText">Cabin Audio</span>
+        </div>
+        <div id="adaptHaptic" style="padding: 5px 8px; background: #21262d; border: 1px solid var(--line); border-radius: 6px; display: flex; align-items: center; gap: 8px; transition: background-color 0.2s, border-color 0.2s;">
+          <span>📳</span> <span id="adaptHapticText">Seat Haptics</span>
+        </div>
+        <div id="adaptLogic" style="padding: 5px 8px; background: #21262d; border: 1px solid var(--line); border-radius: 6px; display: flex; align-items: center; gap: 8px; transition: background-color 0.2s, border-color 0.2s;">
+          <span>⚙</span> <span id="adaptLogicText">Intervention Logic</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Operator Analytics -->
+    <div class="card">
+      <h2>Operator Live Analytics</h2>
+      <div style="display: flex; flex-direction: column; gap: 4px; font-size: 12px;">
+        <div class="row">
+          <span>Cabin Safety Score</span>
+          <strong id="safetyScore" style="color: var(--green);">98 / 100</strong>
+        </div>
+        <div class="row" style="border: none; padding-bottom: 0;">
+          <span>Operator Compliance</span>
+          <strong id="complianceScore" style="color: var(--green);">96%</strong>
+        </div>
+      </div>
+    </div>
+    
+    <div id="opTags" style="display:none;"></div> <!-- hidden compatibility tag -->
+
+    <!-- Controls & Site context badge -->
+    <div class="card">
+      <h2>Site Hazard Overrides</h2>
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <button onclick="fetch('/api/trigger_blindspot', {method:'POST'})"
+                style="width:100%; padding:8px; background:var(--red); color:white; border:none; border-radius:6px; cursor:pointer; font-weight:bold;">
+          ⚠ Trigger Blind-Spot
+        </button>
+        <button id="testAlertBtn" onclick="triggerTestAlert()" style="width: 100%; padding: 8px; background: #5a3a00; color: #ffb300; border: 1px solid #ffb300; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 13px; transition: background .15s;">
+          🧪 Test Alert (Level 3, 4 s)
+        </button>
+      </div>
+    </div>
+    
+    <div class="card">
+      <h2>Context risk (site)</h2>
+      <span class="badge" id="ctxBadge" style="background:#5a3a00; color:#fff; display:flex; width: 100%;">
+        <span class="ctx-level">MODERATE</span>
+        <span class="ctx-sub">Urban construction · clear · daytime</span>
+      </span>
+    </div>
+  </section>
+
+  <!-- Center Column: Camera Streams & Telemetry Grid -->
+  <section class="center-content">
+    <!-- Active alert banner -->
+    <div class="card" style="padding:0; border:none;">
+      <div class="banner" id="banner" data-level="0">ALL CLEAR</div>
+    </div>
+
+    <!-- Trainee shield notice bar (shown only for trainees) -->
+    <div id="traineeLockNotice" class="trainee-shield-bar" style="display: none;">
+      🛡️ Trainee Control Shield active: Speed governed to 1.5 m/s. AI alerts governed +30% sensitivity.
+    </div>
+
+    <!-- Haptic display alerting bar (shown only for hearing-impaired on alerts) -->
+    <div id="hapticFeedbackAlert" class="haptic-alert-bar" style="display: none;">
+      📳 [Haptic seat vibration active]
+    </div>
+
+    <!-- Center 6-card dashboard layout (exactly matches original row spans) -->
+    <div class="grid" style="display: grid; grid-template-columns:1fr 1.2fr 1.2fr 1fr; padding:0; gap:14px; flex-shrink: 0;">
+      <div class="card" id="cardFatigue">
+        <h2>Fatigue</h2>
+        <div class="row"><span id="fatDecision">—</span><span id="fatPct">0%</span></div>
+        <div class="gauge"><div id="fatBar" style="background:var(--amber)"></div></div>
+        <div class="muted" id="fatSev"></div>
+      </div>
+      <!-- Camera preview -->
+      <div class="card" id="camWrap">
+        <h2 style="padding:10px 14px 6px; margin:0;">Camera preview</h2>
+        <img id="camPreview" src="/video_feed"
+             alt="Live camera feed"
+             onerror="this.style.display='none';
+                      document.getElementById('camMsg').style.display='block';">
+        <div id="camMsg"
+             style="display:none; padding:18px 12px; color:var(--muted);
+                    text-align:center; font-size:12px;">
+          Camera not available
+        </div>
+      </div>
+      <!-- Blind-Spot preview -->
+      <div class="card" id="bsWrap" style="grid-row:1/3; display:flex; flex-direction:column; padding:0; overflow:hidden;">
+        <h2 style="padding:10px 14px 6px; margin:0;">Blind-Spot feed</h2>
+        <img id="bsPreview" src="/blindspot_feed"
+             alt="Live blind-spot feed"
+             style="width:100%; display:block; object-fit:contain; background:#000; border-radius:0 0 8px 8px; max-height:360px;"
+             onerror="this.style.display='none';
+                      document.getElementById('bsMsg').style.display='block';">
+        <div id="bsMsg"
+             style="display:none; padding:18px 12px; color:var(--muted);
+                    text-align:center; font-size:12px;">
+          YOLO feed offline
+        </div>
+      </div>
+      <div class="card" id="cardRisk">
+        <h2>Live risk score</h2>
+        <div class="big" id="riskScore">0</div>
+        <div class="gauge"><div id="riskBar" style="background:var(--red)"></div></div>
+        <div class="muted" id="riskFormula"></div>
+      </div>
+      <div class="card">
+        <h2>Blind-spot zone</h2>
+        <div class="zone">
+          <span id="zGREEN">GREEN</span>
+          <span id="zAMBER">AMBER</span>
+          <span id="zRED">RED</span>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <span>Machine speed</span><span id="mSpeed">0</span>
+        </div>
+        <div class="row"><span>Reversing</span><span id="mRev">no</span></div>
+      </div>
+      <div class="card" id="cardTilt">
+        <h2>Machine tilt</h2>
+        <div class="big" id="tiltDeg">0°</div>
+        <div class="gauge"><div id="tiltBar" style="background:var(--blue)"></div></div>
+        <div class="muted" id="tiltStatus"></div>
+      </div>
+    </div>
+    
+    <!-- Reason card -->
+    <div class="card" style="flex-shrink: 0;">
+      <h2>Reason card — why did this fire?</h2>
+      <div class="reason" id="reason"><span class="muted">No active alert.</span></div>
+      <div id="personalAdvice" style="border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; font-size: 13px;">
+        <div style="font-weight: 700; color: var(--blue); margin-bottom: 2px;">🎯 PERSONALIZED SAFETY RECOMMENDATION</div>
+        <div id="adviceText" style="line-height: 1.4; color: var(--txt);">—</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Right Column: Incident Timeline & Workforce Analytics & Search Directory switcher -->
+  <section class="sidebar-right">
+    <!-- Incident timeline -->
+    <div class="card" style="flex: 0 0 200px; display: flex; flex-direction: column; overflow: hidden;">
+      <h2>Incident timeline (Level ≥ 2)</h2>
+      <div style="flex-grow:1; overflow-y:auto; padding-right: 2px;">
+        <ul class="timeline" id="timeline"><li class="muted">No incidents yet.</li></ul>
+      </div>
+    </div>
+
+    <!-- Workforce Analytics Summary -->
+    <div class="card" style="flex: 0 0 auto;">
+      <h2>Workforce Analytics</h2>
+      <div style="display: flex; flex-direction: column; gap: 4px; font-size: 12px;">
+        <div class="row">
+          <span>Total Shift Incidents</span>
+          <strong id="timelineCount" style="color: #fff;">0</strong>
+        </div>
+        <div class="row">
+          <span>Active Site Operators</span>
+          <strong style="color: #fff;">120</strong>
+        </div>
+        <div class="row" style="border: none; padding-bottom: 0;">
+          <span>Fleet Avg Risk Index</span>
+          <strong style="color: var(--blue);">14.2%</strong>
+        </div>
+      </div>
+    </div>
+
+    <!-- Searchable Operator Directory card (STICKY search bar) -->
+    <div class="card" style="flex: 1 1 auto; display: flex; flex-direction: column; overflow: hidden; min-height: 180px;">
+      <h2>Operator directory</h2>
+      <!-- Sticky search input -->
+      <input type="text" id="opSearchInput" placeholder="Search 100+ operators..." 
+             style="width: 100%; padding: 6px 10px; margin-bottom: 8px; background: #0d1117; color: #fff; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; outline: none; transition: border-color .15s; flex-shrink: 0;" />
+      
+      <!-- Scrollable operator list -->
+      <div id="opDirectoryList" style="flex-grow: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--line); border-radius: 6px; padding: 4px; background: #0d1117;">
+        <div id="opButtons"></div> <!-- compatibility div -->
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+// ── Zone labels — default vs colour-blind-safe ───────────────────────────
+const ZONE_LABELS = {
+  normal:  { GREEN:'GREEN', AMBER:'AMBER', RED:'RED' },
+  cb:      { GREEN:'✓ SAFE', AMBER:'! CAUTION', RED:'✕ DANGER' },
+};
+// ── Fatigue severity labels ──────────────────────────────────────────────
+const SEV_LABELS = {
+  normal: { OK:'OK', MILD:'MILD', STRONG:'STRONG' },
+  cb:     { OK:'✓ OK', MILD:'! MILD', STRONG:'!! STRONG' },
+};
+
+// ── Web Speech API Alarm text keys ──────────────────────────────────────
+const SPEECH_PHRASES = {
+  en: { 1: "Heads up. Stay alert.", 2: "Warning. Take action now.", 3: "Emergency. Machine slowing." },
+  hi: { 1: "सावधान रहें।", 2: "चेतावनी। तुरंत कार्रवाई करें।", 3: "आपातकाल। मशीन धीमी हो रही है।" },
+  ta: { 1: "கவனமாக இருங்கள்.", 2: "எச்சரிக்கை. உடனே நடவடிக்கை.", 3: "அவசரம். இயந்திரம் நிற்கிறது." },
+  te: { 1: "అప్రమత్తంగా ఉండండి.", 2: "హెచ్చరిక. వెంటనే చర్య.", 3: "అత్యవసరం. యంత్రం ఆగుతోంది." }
+};
+
+const WELCOME_PHRASES = {
+  en: "Co-pilot profiles loaded. Standard assistance active.",
+  hi: "सह-चालక प्रोफ़ाइल लोड हो गई है। मानक सहायता सक्रिय है।",
+  ta: "துணை பைலட் சுயவிவரம் ஏற்றப்பட்டது. நிலையான உதவி செயலில் உள்ளது.",
+  te: "కో-పైలట్ ప్రొఫైల్ లోడ్ చేయబడింది. ప్రామాణిక సహాయం సక్రియంగా ఉంది."
+};
+
+let ws;
+let _cbMode = false;   // tracks current colour-blind state
+let _activeOpId = null;
+let _allProfiles = {};
+
+// ════════════════════════════════════════════════════════════════════
+// BUZZ & SPEECH SYSTEM
+// ════════════════════════════════════════════════════════════════════
+
+let _audioCtx = null;
+let _audioUnlocked = false;
+let _beepInterval = null;
+let _testAlertTimer = null;
+let _testActive = false;
+let lastSpokenLevel = 0;
+let lastSpokenOperator = null;
+
+const _soundUnlockBtn = document.getElementById('soundUnlock');
+_soundUnlockBtn.style.display = 'block';
+
+_soundUnlockBtn.addEventListener('click', () => {
+  unlockAudio();
+  if (window.speechSynthesis) {
+    const u = new SpeechSynthesisUtterance("Audio unlocked.");
+    u.volume = 0.0;
+    window.speechSynthesis.speak(u);
+  }
+  _soundUnlockBtn.style.display = 'none';
+}, { once: true });
+
+document.body.addEventListener('click', unlockAudio, { once: true });
+document.body.addEventListener('keydown', unlockAudio, { once: true });
+
+function unlockAudio() {
+  if (_audioUnlocked) return;
+  _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  _audioUnlocked = true;
+  _soundUnlockBtn.style.display = 'none';
+}
+
+function playBeep() {
+  if (!_audioUnlocked || !_audioCtx) return;
+  const osc = _audioCtx.createOscillator();
+  const gain = _audioCtx.createGain();
+  osc.connect(gain);
+  gain.connect(_audioCtx.destination);
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(_cbMode ? 660 : 440, _audioCtx.currentTime);
+  gain.gain.setValueAtTime(0.18, _audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, _audioCtx.currentTime + 0.35);
+  osc.start(_audioCtx.currentTime);
+  osc.stop(_audioCtx.currentTime + 0.35);
+}
+
+let _currentBuzzLevel = 0;
+
+function setBuzz(level, isHearingImpaired) {
+  const overlay = document.getElementById('buzzOverlay');
+
+  if (level === _currentBuzzLevel) return; 
+  _currentBuzzLevel = level;
+
+  overlay.setAttribute('data-buzz', String(level));
+
+  if (level === 3) {
+    overlay.textContent = _cbMode ? '⛔' : '';
+  } else {
+    overlay.textContent = '';
+  }
+
+  if (_beepInterval) { clearInterval(_beepInterval); _beepInterval = null; }
+  if (level === 3 && !isHearingImpaired) {
+    playBeep(); 
+    _beepInterval = setInterval(playBeep, 2500);
+  }
+}
+
+// ── Voice Alert Escalations & Welcomes ────────────────────────────────────
+function handleVoiceAlert(level, op) {
+  if (op.id !== lastSpokenOperator) {
+    lastSpokenOperator = op.id;
+    lastSpokenLevel = level;
+    
+    if (op.hearing !== 'impaired') {
+      const welcomeText = `${op.name}. ${WELCOME_PHRASES[op.language] || WELCOME_PHRASES['en']}`;
+      speakAlert(welcomeText, op.language);
+    }
+    return;
+  }
+  
+  if (level === lastSpokenLevel) return;
+  lastSpokenLevel = level;
+  
+  if (level <= 0) return;
+  if (op.hearing === 'impaired') return; 
+  
+  const textDict = SPEECH_PHRASES[op.language] || SPEECH_PHRASES['en'];
+  const text = textDict[level] || "";
+  
+  if (text) {
+    speakAlert(text, op.language);
+  }
+}
+
+function speakAlert(text, langCode) {
+  if (!window.speechSynthesis) return;
+  try {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    const langMap = { en: 'en-US', hi: 'hi-IN', ta: 'ta-IN', te: 'te-IN' };
+    utterance.lang = langMap[langCode] || 'en-US';
+    utterance.volume = 1.0;
+    utterance.rate = 0.85; 
+    window.speechSynthesis.speak(utterance);
+  } catch (err) {
+    console.error("Speech error:", err);
+  }
+}
+
+// ── Manual Test Alert ─────────────────────────────────────────────────────
+function triggerTestAlert() {
+  if (_testActive) return;
+  _testActive = true;
+  const btn = document.getElementById('testAlertBtn');
+  btn.disabled = true;
+  btn.textContent = '⏱ Testing… (4 s)';
+
+  setBuzz(3, false); 
+  
+  const activeOp = _allProfiles[_activeOpId];
+  if (activeOp && activeOp.hearing !== 'impaired') {
+    const textDict = SPEECH_PHRASES[activeOp.language] || SPEECH_PHRASES['en'];
+    speakAlert("TEST ALERT! " + (textDict[3] || ""), activeOp.language);
+  }
+
+  const banner = document.getElementById('banner');
+  const prevLevel = banner.getAttribute('data-level');
+  const prevText  = banner.textContent;
+  banner.setAttribute('data-level', '3');
+  banner.textContent = _cbMode ? '⛔ TEST · LEVEL 3 EMERGENCY' : '🚨 TEST · LEVEL 3 EMERGENCY';
+
+  _testAlertTimer = setTimeout(() => {
+    _testActive = false;
+    setBuzz(0, false);
+    banner.setAttribute('data-level', prevLevel);
+    banner.textContent = prevText;
+    btn.disabled = false;
+    btn.textContent = '🧪 Test Alert (Level 3, 4 s)';
+  }, 4000);
+}
+
+// ── Colour-blind mode toggle ─────────────────────────────────────────────
+function setCbMode(enabled) {
+  _cbMode = enabled;
+  document.documentElement.setAttribute('data-cb', enabled ? '1' : '0');
+  const labels = enabled ? ZONE_LABELS.cb : ZONE_LABELS.normal;
+  document.getElementById('zGREEN').textContent = labels.GREEN;
+  document.getElementById('zAMBER').textContent = labels.AMBER;
+  document.getElementById('zRED').textContent   = labels.RED;
+}
+
+// ── Dynamic SVG Avatar Generator ─────────────────────────────────────────
+function getOperatorAvatar(op, size = 36) {
+  let themeColor = '#1f6feb';
+  let helmetColor = '#ffb300';
+  if (op.experience === 'expert') {
+    themeColor = '#2ea043';
+    helmetColor = '#e6edf3';
+  } else if (op.experience === 'trainee') {
+    themeColor = '#d29922';
+    helmetColor = '#f85149';
+  }
+  
+  const nameHash = op.name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const skinTones = ['#ffdbac', '#f1c27d', '#e0ac69', '#c68642', '#8d5524'];
+  const skinColor = skinTones[nameHash % skinTones.length];
+  
+  const shirtColors = ['#0d2137', '#1a2b1a', '#3a2600', '#3b0a0a', '#1f6feb', '#2ea043', '#8b949e'];
+  const shirtColor = shirtColors[nameHash % shirtColors.length];
+
+  return `
+    <svg viewBox="0 0 100 100" class="avatar-svg" style="width: ${size}px; height: ${size}px; border-radius: 50%; border: 1.5px solid ${themeColor}; background: #161b22; display: block;">
+      <circle cx="50" cy="50" r="50" fill="#0d1117" />
+      <path d="M 22 92 C 22 75, 78 75, 78 92 Z" fill="${shirtColor}" />
+      <path d="M 32 82 L 40 92 M 68 82 L 60 92" stroke="#CCFF00" stroke-width="4" stroke-linecap="round" />
+      <path d="M 38 88 L 62 88" stroke="#CCFF00" stroke-width="4" stroke-linecap="round" />
+      <rect x="44" y="60" width="12" height="10" fill="${skinColor}" />
+      <circle cx="50" cy="50" r="17" fill="${skinColor}" />
+      <path d="M 32 44 C 32 23, 68 23, 68 44 Z" fill="${helmetColor}" />
+      <path d="M 28 42 L 72 42 C 74 42, 74 45, 72 45 L 28 45 C 26 45, 26 42, 28 42 Z" fill="${helmetColor}" />
+      <path d="M 47 26 C 48 20, 52 20, 53 26 Z" fill="${helmetColor}" opacity="0.8" />
+      <rect x="47" y="27" width="6" height="15" fill="${helmetColor}" stroke="#101419" stroke-width="0.5" />
+      <ellipse cx="44" cy="50" rx="3" ry="1.5" fill="#161b22" />
+      <ellipse cx="56" cy="50" rx="3" ry="1.5" fill="#161b22" />
+      <path d="M 46 56 Q 50 59, 54 56" stroke="#161b22" stroke-width="1.5" stroke-linecap="round" fill="none" />
+    </svg>
+  `;
+}
+
+// ── Fetch & Search Operator Directory ───────────────────────────────────
+async function loadOps(){
+  const r = await fetch('/api/profiles');
+  _allProfiles = await r.json();
+  
+  const searchInput = document.getElementById('opSearchInput');
+  searchInput.addEventListener('input', (e) => {
+    renderDirectory(e.target.value);
+  });
+  
+  renderDirectory('');
+  
+  const h = await (await fetch('/api/health')).json();
+  document.getElementById('backend').textContent =
+    `fatigue:${h.fatigue_backend} · vision:${h.person_backend}`;
+}
+
+function renderDirectory(query = '') {
+  const box = document.getElementById('opDirectoryList');
+  box.innerHTML = '';
+  
+  const cleanQuery = query.toLowerCase().trim();
+  
+  const filtered = Object.values(_allProfiles).filter(o => {
+    const name = o.name.toLowerCase();
+    const id = o.id.toLowerCase();
+    const role = o.role.toLowerCase();
+    const hearing = o.hearing.toLowerCase();
+    const color = o.color_vision.toLowerCase();
+    const exp = o.experience.toLowerCase();
+    
+    return name.includes(cleanQuery) || 
+           id.includes(cleanQuery) || 
+           role.includes(cleanQuery) ||
+           (cleanQuery === 'hearing-impaired' || cleanQuery === 'deaf' ? hearing === 'impaired' : hearing.includes(cleanQuery)) ||
+           (cleanQuery === 'color-blind' || cleanQuery === 'colour-blind' ? color !== 'normal' : color.includes(cleanQuery)) ||
+           exp.includes(cleanQuery);
+  });
+  
+  filtered.sort((a, b) => {
+    const priority = ['ravi', 'priya', 'arjun'];
+    const idxA = priority.indexOf(a.id);
+    const idxB = priority.indexOf(b.id);
+    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+    if (idxA !== -1) return -1;
+    if (idxB !== -1) return 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  filtered.forEach(o => {
+    const item = document.createElement('div');
+    item.id = 'opbtn-' + o.id;
+    item.className = 'op-btn';
+    
+    if (o.id === _activeOpId) {
+      item.classList.add('active');
+    }
+    
+    item.style = 'display:flex; align-items:center; gap:8px; margin:2px 0; padding:6px; background:#21262d; color:#e6edf3;' +
+                 'border:1px solid #30363d; border-radius:6px; cursor:pointer; transition:border-color .2s,background .2s; text-align:left; width:100%;';
+    
+    let badges = '';
+    if (o.experience === 'trainee') badges += '🎓';
+    if (o.hearing === 'impaired') badges += '🦻';
+    if (o.color_vision !== 'normal') badges += '🎨';
+    
+    item.innerHTML = `
+      <div style="flex-shrink:0;">
+        ${getOperatorAvatar(o, 24)}
+      </div>
+      <div style="flex-grow:1; min-width:0;">
+        <div style="font-size:11px; font-weight:600; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; color:#fff;">${o.name} ${badges}</div>
+        <div style="font-size:9px; color:var(--muted); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">${o.role}</div>
+      </div>
+    `;
+    
+    item.onclick = () => fetch('/api/operator/' + o.id, { method:'POST' });
+    box.appendChild(item);
+  });
+}
+
+// ── Personalized Safety Recommendations ─────────────────────────────────
+function getPersonalAdvice(op, alertLevel) {
+  const isHearing = op.hearing === 'impaired';
+  const isColor = op.color_vision !== 'normal';
+  const isTrainee = op.experience === 'trainee';
+  
+  if (alertLevel === 0) {
+    if (isTrainee) {
+      return "Trainee Guardrails Shield Active. Max speed governed at 1.5 m/s. Fatigue thresholds lowered 30% for safety.";
+    }
+    if (isHearing) {
+      return "Hearing impaired mode: Audio alarms muted. Directing warnings to Haptic Seat Vibration (Pulsing) & Flash overlays.";
+    }
+    if (isColor) {
+      return `Color-blind display mode active for ${op.color_vision}. Warning symbols are shape-coded: Safe (✓), Caution (!), Danger (✕).`;
+    }
+    return "All cabin systems operating normally. Keep scanning the worksite and maintain standard machine operational speeds.";
+  }
+  
+  if (alertLevel === 1) {
+    if (isTrainee) return "NUDGE: Slight fatigue or hazard detected early. Check controls and scan perimeter.";
+    return "NUDGE: System recommends checking posture and scanning blind spots.";
+  }
+  
+  if (alertLevel === 2) {
+    if (isTrainee) return "WARNING: Safety thresholds exceeded. Trainee speed governor engaged. Reduce speed immediately.";
+    if (isHearing) return "WARNING: Haptic seat vibration active. Check cabin camera preview overlay.";
+    return "WARNING: Elevated risk. Check blind spots and verify machine pitch angle.";
+  }
+  
+  if (alertLevel === 3) {
+    if (isTrainee) return "EMERGENCY: Immediate safety override engaged. Cabin controls locked. Please stop the machine.";
+    if (isHearing) return "EMERGENCY: Blind spot occupied while reversing! Look at screen alerts. Seat vibration at max.";
+    return "EMERGENCY: Hard safety rules violated. Controls override engaged. Machine slowing.";
+  }
+  
+  return "Elevated risk detected. Please follow standard cabin emergency protocols.";
+}
+
+// ── WebSocket ────────────────────────────────────────────────────────────
+function connect(){
+  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen  = ()=>{ document.getElementById('conn').textContent='● live'; ws.send('hi'); };
+  ws.onclose = ()=>{ document.getElementById('conn').textContent='● disconnected';
+                     setTimeout(connect, 1000); };
+  ws.onmessage = e => render(JSON.parse(e.data));
+}
+
+// ── Main Render Tick ─────────────────────────────────────────────────────
+let compliance = 96.0;
+
+function render(f){
+  document.getElementById('phase').textContent =
+    f.phase ? ('machine: '+f.phase+' │ fatigue: LIVE') : 'fatigue: LIVE';
+
+  // ── operator ────────────────────────────────────────────────────────
+  const op = f.operator;
+  document.getElementById('opName').textContent = op.name;
+  document.getElementById('opRole').textContent = op.role;
+  document.getElementById('opId').textContent = 'ID: ' + op.id.toUpperCase();
+  
+  // Dynamic profile avatar
+  document.getElementById('avatarContainer').innerHTML = getOperatorAvatar(op, 64);
+
+  const isColourBlind    = op.color_vision !== 'normal';
+  const isHearingImpaired = op.hearing === 'impaired';
+
+  // Drive cb-safe mode from the active operator's profile
+  if (isColourBlind !== _cbMode) setCbMode(isColourBlind);
+
+  // Play Speech announcements
+  handleVoiceAlert(f.alert.level, op);
+
+  // Highlight active operator button/row in directory
+  if (op.id !== _activeOpId) {
+    if (_activeOpId) {
+      const prev = document.getElementById('opbtn-' + _activeOpId);
+      if (prev) prev.classList.remove('active');
+    }
+    const cur = document.getElementById('opbtn-' + op.id);
+    if (cur) cur.classList.add('active');
+    _activeOpId = op.id;
+  }
+
+  // Tags/Badges on Sidebar card
+  const expBadge = document.getElementById('opExpBadge');
+  expBadge.textContent = op.experience.toUpperCase();
+  expBadge.style.color = op.experience === 'expert' ? 'var(--green)' : (op.experience === 'trainee' ? 'var(--amber)' : '#fff');
+  
+  const accessBadge = document.getElementById('opAccessBadge');
+  let accessText = 'None (Standard)';
+  if (isHearingImpaired && isColourBlind) accessText = 'Hearing + Color Assist';
+  else if (isHearingImpaired) accessText = 'Hearing Impaired';
+  else if (isColourBlind) accessText = `Color Blind (${op.color_vision.toUpperCase()})`;
+  accessBadge.textContent = accessText;
+  accessBadge.style.color = (isHearingImpaired || isColourBlind) ? 'var(--blue)' : '#fff';
+  
+  const langNames = { en: 'English', hi: 'Hindi (हिंदी)', ta: 'Tamil (தமிழ்)', te: 'Telugu (తెలుగు)' };
+  document.getElementById('opLangBadge').textContent = langNames[op.language] || op.language.toUpperCase();
+
+  // Hidden tags mapping for compatibility if needed
+  const tags = [`🌐 ${op.language}`, `🎓 ${op.experience}`];
+  if (isHearingImpaired)  tags.push('🦻 hearing-impaired');
+  if (isColourBlind)      tags.push('🎨 colour-blind');
+  document.getElementById('opTags').innerHTML =
+    tags.map(t => `<span class="tag">${t}</span>`).join('');
+
+  // ── Adaptations Checklist Panel Update ───────────────────────────────
+  // Visual Display theme
+  const cbDesc = document.getElementById('adaptVisualText');
+  const visualItem = document.getElementById('adaptVisual');
+  if (isColourBlind) {
+    cbDesc.textContent = `High Contrast (${op.color_vision.toUpperCase()})`;
+    visualItem.style.borderColor = 'var(--blue)';
+    visualItem.style.backgroundColor = 'rgba(31, 111, 235, 0.1)';
+  } else {
+    cbDesc.textContent = 'Standard Display';
+    visualItem.style.borderColor = 'var(--line)';
+    visualItem.style.backgroundColor = '#21262d';
+  }
+
+  // Audio Alerts
+  const audioDesc = document.getElementById('adaptAudioText');
+  const audioItem = document.getElementById('adaptAudio');
+  if (isHearingImpaired) {
+    audioDesc.textContent = 'Alarms Muted (Hearing Deficiency)';
+    audioItem.style.borderColor = 'var(--line)';
+    audioItem.style.backgroundColor = '#21262d';
+  } else {
+    const langName = langNames[op.language] || op.language.toUpperCase();
+    audioDesc.textContent = `Audio Tones & Voice (${langName.split(' ')[0]})`;
+    audioItem.style.borderColor = 'var(--blue)';
+    audioItem.style.backgroundColor = 'rgba(31, 111, 235, 0.1)';
+  }
+
+  // Haptic Vibrations
+  const hapticDesc = document.getElementById('adaptHapticText');
+  const hapticItem = document.getElementById('adaptHaptic');
+  if (isHearingImpaired) {
+    hapticDesc.textContent = 'Seat Vibration ENGAGED (120Hz)';
+    hapticItem.style.borderColor = 'var(--blue)';
+    hapticItem.style.backgroundColor = 'rgba(31, 111, 235, 0.1)';
+  } else {
+    hapticDesc.textContent = 'Haptics Standby';
+    hapticItem.style.borderColor = 'var(--line)';
+    hapticItem.style.backgroundColor = '#21262d';
+  }
+
+  // Intervention Logic Sensitivity
+  const logicDesc = document.getElementById('adaptLogicText');
+  const logicItem = document.getElementById('adaptLogic');
+  if (op.experience === 'trainee') {
+    logicDesc.textContent = 'Conservative Shield (+30% Sensitive)';
+    logicItem.style.borderColor = 'var(--amber)';
+    logicItem.style.backgroundColor = 'rgba(210, 153, 34, 0.1)';
+  } else if (op.experience === 'expert') {
+    logicDesc.textContent = 'Expert Baseline (Standard)';
+    logicItem.style.borderColor = 'var(--green)';
+    logicItem.style.backgroundColor = 'rgba(46, 160, 67, 0.1)';
+  } else {
+    logicDesc.textContent = 'Standard Co-Pilot (Medium)';
+    logicItem.style.borderColor = 'var(--line)';
+    logicItem.style.backgroundColor = '#21262d';
+  }
+
+  // ── Trainee Mode UI Gov Banner (No blurring/disabling widgets) ───
+  const traineeNotice = document.getElementById('traineeLockNotice');
+  if (op.experience === 'trainee') {
+    traineeNotice.style.display = 'block';
+  } else {
+    traineeNotice.style.display = 'none';
+  }
+
+  // ── Live Operator Analytics (Compliance & Safety Score) ─────────────
+  // 1. Safety Score
+  const safetyScoreVal = Math.max(10, 100 - Math.round(f.risk_score.score * 0.85));
+  document.getElementById('safetyScore').textContent = safetyScoreVal + ' / 100';
+  document.getElementById('safetyScore').style.color = safetyScoreVal > 80 ? 'var(--green)' : (safetyScoreVal > 55 ? 'var(--amber)' : 'var(--red)');
+
+  // 2. Compliance Score
+  if (f.alert.level >= 2 && f.machine.speed > 0.3 && f.fatigue.p > 0.8) {
+    compliance = Math.max(72.0, compliance - 0.4);
+  } else if (f.alert.level > 0 && f.machine.speed > 0.3 && f.fatigue.p < 0.3) {
+    compliance = Math.min(99.0, compliance + 0.15);
+  }
+  document.getElementById('complianceScore').textContent = Math.round(compliance) + '%';
+  document.getElementById('complianceScore').style.color = compliance > 85 ? 'var(--green)' : (compliance > 75 ? 'var(--amber)' : 'var(--red)');
+
+  // ── fatigue ─────────────────────────────────────────────────────────
+  const p = Math.round(f.fatigue.p * 100);
+  document.getElementById('fatPct').textContent      = p + '%';
+  document.getElementById('fatDecision').textContent = f.fatigue.decision;
+  document.getElementById('fatBar').style.width      = p + '%';
+  const sev = f.fatigue.severity;
+  const sevLabels = _cbMode ? SEV_LABELS.cb : SEV_LABELS.normal;
+  document.getElementById('fatSev').textContent =
+    'severity: ' + (sevLabels[sev] || sev);
+
+  // ── risk ─────────────────────────────────────────────────────────────
+  document.getElementById('riskScore').textContent    = Math.round(f.risk_score.score);
+  document.getElementById('riskBar').style.width      = f.risk_score.score + '%';
+  document.getElementById('riskFormula').textContent  = f.risk_score.formula;
+
+  // ── zone pills ───────────────────────────────────────────────────────
+  ['zGREEN','zAMBER','zRED'].forEach(id =>
+    document.getElementById(id).classList.remove('on'));
+  const activeZoneId = { GREEN:'zGREEN', AMBER:'zAMBER', RED:'zRED' }[f.zone];
+  if (activeZoneId) document.getElementById(activeZoneId).classList.add('on');
+  document.getElementById('mSpeed').textContent = f.machine.speed + ' m/s';
+  document.getElementById('mRev').textContent   = f.machine.reversing ? 'YES ⚠' : 'no';
+
+  // ── tilt ─────────────────────────────────────────────────────────────
+  document.getElementById('tiltDeg').textContent    = f.tilt.tilt_angle + '°';
+  document.getElementById('tiltStatus').textContent = 'status: ' + f.tilt.status;
+  const tiltPct = Math.min(100, Math.max(0, (f.tilt.tilt_angle / 25.0) * 100));
+  document.getElementById('tiltBar').style.width = tiltPct + '%';
+
+  // ── banner — colour escalates by level ───────────────────────────────
+  const b   = document.getElementById('banner');
+  const lvl = f.alert.level;
+  b.setAttribute('data-level', lvl);
+  b.classList.remove('flash');
+
+  let bannerText = lvl === 0 ? '✓ ALL CLEAR' : `LEVEL ${lvl} · ${f.alert.label.toUpperCase()}`;
+  if (_cbMode && lvl === 3) bannerText = `⛔ ${bannerText}`;
+  b.textContent = bannerText;
+
+  if (f.alert.delivery && f.alert.delivery.flash){
+    void b.offsetWidth; b.classList.add('flash');
+  }
+
+  // ══ Haptic simulator overlay (Deaf operator level >= 2) ════════════════
+  const hapticAlert = document.getElementById('hapticFeedbackAlert');
+  if (lvl >= 2 && isHearingImpaired) {
+    hapticAlert.style.display = 'block';
+    hapticAlert.textContent = lvl === 3 
+      ? '📳 [HAPTIC SEAT VIBRATION ENGAGED - CRITICAL PULSING 120Hz]' 
+      : '📳 [HAPTIC SEAT VIBRATION ENGAGED - GENTLE PULSING 60Hz]';
+  } else {
+    hapticAlert.style.display = 'none';
+  }
+
+  // ══ BUZZ OVERLAY — drive from real alert level (skip if test is active) ══
+  if (!_testActive) {
+    setBuzz(lvl, isHearingImpaired);
+  }
+
+  // ── reason card ──────────────────────────────────────────────────────
+  const rc = document.getElementById('reason');
+  if (f.reason_card){
+    let html = `<div class="t">${f.reason_card.title}</div><div>${f.reason_card.detail}</div>`;
+    (f.reason_card.factors||[]).forEach(x => {
+      html += `<div class="factor">• ${x.label||x.feature}: ${x.value} (${x.direction})</div>`;
+    });
+    html += `<div class="factor" style="margin-top:6px">tier: ${f.alert.tier} · source: ${f.reason_card.source}</div>`;
+    rc.innerHTML = html;
+  } else {
+    rc.innerHTML = '<span class="muted">No active alert.</span>';
+  }
+
+  // ── personal advice text ─────────────────────────────────────────────
+  document.getElementById('adviceText').textContent = getPersonalAdvice(op, lvl);
+
+  // ── context risk — dynamic XGBoost model ──────
+  const cb = document.getElementById('ctxBadge');
+  if (f.context_risk) {
+    cb.style.background = f.context_risk.color;
+    cb.style.color = '#fff';
+    cb.innerHTML =
+      `<span class="ctx-level">${f.context_risk.bucket.toUpperCase()} RISK</span>` +
+      `<span class="ctx-sub">${f.context_risk.time} · ${f.context_risk.weather}</span>`;
+  }
+
+  if (lvl >= 2) refreshTimeline();
+  updateTimelineCount();
+}
+
+// ── Timeline & Workforce Analytics count ─────────────────────────────────
+async function refreshTimeline(){
+  const items = await (await fetch('/api/timeline')).json();
+  const ul = document.getElementById('timeline');
+  if (!items.length){ ul.innerHTML='<li class="muted">No incidents yet.</li>'; return; }
+  ul.innerHTML = items.map(e => {
+    const time = new Date(e.ts*1000).toLocaleTimeString();
+    return `<li><span class="lv">L${e.level}</span> ${e.title}
+            <div class="muted">${time} · ${e.operator} · risk ${e.risk_score}</div></li>`;
+  }).join('');
+}
+
+function updateTimelineCount() {
+  const timelineList = document.getElementById('timeline');
+  const incidentCount = timelineList.getElementsByTagName('li').length;
+  const hasIncidents = incidentCount > 0 && !timelineList.querySelector('.muted');
+  document.getElementById('timelineCount').textContent = hasIncidents ? incidentCount : 0;
+}
+
+loadOps(); connect();
+</script>
+</body>
+</html>
